@@ -64,6 +64,9 @@ public class State implements Cloneable {
     // we should DEFINITELY rename this variable and the associated methods.
     protected double walkDistance;
 
+    // The time traveled pre-transit, for park and ride or kiss and ride searches
+    int preTransitTime;
+
     // track the states of all path parsers -- probably changes frequently
     protected int[] pathParserStates;
     
@@ -120,6 +123,7 @@ public class State implements Cloneable {
             this.stateData.nonTransitMode = this.stateData.carParked ? TraverseMode.WALK : TraverseMode.CAR;
         }
         this.walkDistance = 0;
+        this.preTransitTime = 0;
         this.time = timeSeconds * 1000;
         if (options.rctx != null) {
             this.pathParserStates = new int[options.rctx.pathParsers.length];
@@ -178,6 +182,7 @@ public class State implements Cloneable {
                 " w=" + this.getWeight() + 
                 " t=" + this.getElapsedTimeSeconds() + 
                 " d=" + this.getWalkDistance() + 
+                " p=" + this.getPreTransitTime() +
                 " b=" + this.getNumBoardings() +
                 " br=" + this.isBikeRenting() +
                 " pr=" + this.isCarParked() + ">";
@@ -286,6 +291,10 @@ public class State implements Cloneable {
         return walkDistance;
     }
 
+    public int getPreTransitTime() {
+        return preTransitTime;
+    }
+
     public Vertex getVertex() {
         return this.vertex;
     }
@@ -354,6 +363,13 @@ public class State implements Cloneable {
             return Math.abs(this.walkDistance - backState.walkDistance);
         else
             return 0.0;
+    }
+
+    public int getPreTransitTimeDelta () {
+        if (backState != null)
+            return Math.abs(this.preTransitTime - backState.preTransitTime);
+        else
+            return 0;
     }
 
     public double getWeightDelta() {
@@ -714,12 +730,17 @@ public class State implements Cloneable {
                 else                   
                     ret = edge.traverse(ret);
 
+                if (ret != null && ret.getBackMode() != null && orig.getBackMode() != null &&
+                        ret.getBackMode() != orig.getBackMode()) {
+                    ret = ret.next; // Keep the mode the same as on the original graph path (in K+R)
+                }
+
                 if (ret == null) {
-                    LOG.warn("Cannot reverse path at edge: " + edge +
-                             ", returning unoptimized path. If edge is a " +
-                             "PatternInterlineDwell or if there is a time-dependent turn " +
-                             "restriction here, this is not totally unexpected; " +
-                             "otherwise, you might want to look into it");
+                    LOG.warn("Cannot reverse path at edge: " + edge + ", returning unoptimized "
+                            + "path. If this edge is a PatternInterlineDwell, or if there is a "
+                            + "time-dependent turn restriction here, or if there is no transit leg "
+                            + "in a K+R result, this is not totally unexpected. Otherwise, you "
+                            + "might want to look into it.");
 
                     // re-enable path parsing
                     stateData.opt.rctx.pathParsers = pathParsers;
@@ -738,6 +759,7 @@ public class State implements Cloneable {
                 editor.incrementTimeInSeconds(orig.getAbsTimeDeltaSeconds());
                 editor.incrementWeight(orig.getWeightDelta());
                 editor.incrementWalkDistance(orig.getWalkDistanceDelta());
+                editor.incrementPreTransitTime(orig.getPreTransitTimeDelta());
                 
                 // propagate the modes and alerts through to the reversed edge
                 editor.setBackMode(orig.getBackMode());

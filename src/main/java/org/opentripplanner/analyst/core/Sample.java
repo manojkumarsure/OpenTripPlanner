@@ -13,12 +13,14 @@
 
 package org.opentripplanner.analyst.core;
 
+import org.opentripplanner.analyst.TimeSurface;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.graph.Vertex;
 import org.opentripplanner.routing.spt.ShortestPathTree;
 
 public class Sample {
-    public final int t0, t1;
+
+    public final int t0, t1; // TODO change from times to distances.
     public final Vertex v0, v1;
     
     public Sample (Vertex v0, int t0, Vertex v1, int t1) {
@@ -41,7 +43,7 @@ public class Sample {
     }
     
     public long eval(ShortestPathTree spt) {
-        State s0 = spt.getState(v0).reverse();
+        State s0 = spt.getState(v0);
         State s1 = spt.getState(v1);
         long m0 = Long.MAX_VALUE;
         long m1 = Long.MAX_VALUE;
@@ -51,7 +53,7 @@ public class Sample {
             m1 = (s1.getActiveTime() + t1); 
         return (m0 < m1) ? m0 : m1; 
     }
-    
+
     public String toString() {
         return String.format("Sample: %s in %d sec or %s in %d sec\n", v0, t0, v1, t1);
     }

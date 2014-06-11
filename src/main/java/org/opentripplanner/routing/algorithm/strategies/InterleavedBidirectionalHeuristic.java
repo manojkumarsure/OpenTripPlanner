@@ -106,8 +106,9 @@ public class InterleavedBidirectionalHeuristic implements RemainingWeightHeurist
         weights = Maps.newHashMapWithExpectedSize(((int)Math.log(nVertices)) + 1);
         this.options = s.getOptions();
         this.origin = s.getVertex();
-        // do not use soft walk limiting in long-distance mode
+        // do not use soft limiting in long-distance mode
         options.setSoftWalkLimiting(false);
+        options.setSoftPreTransitLimiting(false);
         // make sure distance table is initialized before starting thread
         LOG.debug("initializing heuristic computation thread");
         // forward street search first, sets values around origin to 0
@@ -123,10 +124,11 @@ public class InterleavedBidirectionalHeuristic implements RemainingWeightHeurist
             q.insert(stopState.getVertex(), stopState.getWeight());
         }
         LOG.info("end backward street search {}", System.currentTimeMillis());
-        // once street searches are done, raise the walk limit to max
+        // once street searches are done, raise the limits to max
         // because hard walk limiting is incorrect and is observed to cause problems 
         // for trips near the cutoff
         options.setMaxWalkDistance(Double.POSITIVE_INFINITY);
+        options.setMaxPreTransitTime(Integer.MAX_VALUE);
         LOG.debug("initialized SSSP");
         s.getOptions().rctx.debugOutput.finishedPrecalculating();
     }

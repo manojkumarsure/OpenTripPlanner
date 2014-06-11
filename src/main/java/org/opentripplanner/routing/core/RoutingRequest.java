@@ -95,6 +95,12 @@ public class RoutingRequest implements Cloneable, Serializable {
     /** The maximum distance (in meters) the user is willing to walk. Defaults to unlimited. */
     public double maxWalkDistance = Double.MAX_VALUE;
 
+    /**
+     * The maximum time (in seconds) of pre-transit travel when using drive-to-transit (park and
+     * ride or kiss and ride). Defaults to unlimited.
+     */
+    public int maxPreTransitTime = Integer.MAX_VALUE;
+
     /** The worst possible time (latest for depart-by and earliest for arrive-by) to accept */
     public long worstTime = Long.MAX_VALUE;
 
@@ -378,20 +384,22 @@ public class RoutingRequest implements Cloneable, Serializable {
 
     private boolean walkingBike;
 
-	private double heuristicWeight = 1.0;
-	
-	private boolean softWalkLimiting = true;
-	
-	private double softWalkPenalty = 60.0; // a jump in cost when stepping over the walking limit
-	private double softWalkOverageRate = 5.0; // a jump in cost for every meter over the walking limit
+    private double heuristicWeight = 1.0;
+
+    private boolean softWalkLimiting = true;
+    private boolean softPreTransitLimiting = true;
+
+    private double softWalkPenalty = 60.0; // a jump in cost when stepping over the walking limit
+    private double softWalkOverageRate = 5.0; // a jump in cost for every meter over the walking limit
+
+    private double preTransitPenalty = 300.0; // a jump in cost when stepping over the pre-transit time limit
+    private double preTransitOverageRate = 10.0; // a jump in cost for every second over the pre-transit time limit
 
     /* Additional flags affecting mode transitions. This is a temporary solution, as it only covers parking and rental at the beginning of the trip. */
     public boolean allowBikeRental = false;
     public boolean bikeParkAndRide = false;
     public boolean parkAndRide  = false;
     public boolean kissAndRide  = false;
-    /** Weight multiplier for pre-transit travel when using drive-to-transit (park and ride or kiss and ride). */
-    public double firstLegReluctance = 5;
 
     /* CONSTRUCTORS */
 
@@ -467,6 +475,7 @@ public class RoutingRequest implements Cloneable, Serializable {
             bikeWalkingOptions = new RoutingRequest();
             bikeWalkingOptions.setArriveBy(this.isArriveBy());
             bikeWalkingOptions.maxWalkDistance = maxWalkDistance;
+            bikeWalkingOptions.maxPreTransitTime = maxPreTransitTime;
             bikeWalkingOptions.walkSpeed = walkSpeed * 0.8; // walking bikes is slow
             bikeWalkingOptions.walkReluctance = walkReluctance * 2.7; // and painful
             bikeWalkingOptions.optimize = optimize;
@@ -480,6 +489,7 @@ public class RoutingRequest implements Cloneable, Serializable {
             bikeWalkingOptions = new RoutingRequest();
             bikeWalkingOptions.setArriveBy(this.isArriveBy());
             bikeWalkingOptions.maxWalkDistance = maxWalkDistance;
+            bikeWalkingOptions.maxPreTransitTime = maxPreTransitTime;
             bikeWalkingOptions.modes = modes.clone();
             bikeWalkingOptions.modes.setBicycle(false);
             bikeWalkingOptions.modes.setWalk(true);
@@ -899,10 +909,12 @@ public class RoutingRequest implements Cloneable, Serializable {
                 && wheelchairAccessible == other.wheelchairAccessible
                 && optimize.equals(other.optimize)
                 && maxWalkDistance == other.maxWalkDistance
+                && maxPreTransitTime == other.maxPreTransitTime
                 && transferPenalty == other.transferPenalty
                 && maxSlope == other.maxSlope
                 && walkReluctance == other.walkReluctance
                 && waitReluctance == other.waitReluctance
+                && waitAtBeginningFactor == other.waitAtBeginningFactor
                 && walkBoardCost == other.walkBoardCost
                 && bikeBoardCost == other.bikeBoardCost
                 && bannedRoutes.equals(other.bannedRoutes)
@@ -951,6 +963,7 @@ public class RoutingRequest implements Cloneable, Serializable {
                 + optimize.hashCode() + new Double(maxWalkDistance).hashCode()
                 + new Double(transferPenalty).hashCode() + new Double(maxSlope).hashCode()
                 + new Double(walkReluctance).hashCode() + new Double(waitReluctance).hashCode()
+                + new Double(waitAtBeginningFactor).hashCode() * 15485863
                 + walkBoardCost + bikeBoardCost + bannedRoutes.hashCode()
                 + bannedTrips.hashCode() * 1373 + transferSlack * 20996011
                 + (int) nonpreferredTransferPenalty + (int) transferPenalty * 163013803
@@ -958,6 +971,7 @@ public class RoutingRequest implements Cloneable, Serializable {
                 + new Double(triangleSlopeFactor).hashCode() * 136372361
                 + new Double(triangleTimeFactor).hashCode() * 790052899
                 + new Double(stairsReluctance).hashCode() * 315595321
+                + maxPreTransitTime * 63061489
                 + new Long(clampInitialWait).hashCode() * 209477
                 + new Boolean(reverseOptimizeOnTheFly).hashCode() * 95112799
                 + new Boolean(ignoreRealtimeUpdates).hashCode() * 154329
@@ -1039,7 +1053,7 @@ public class RoutingRequest implements Cloneable, Serializable {
     }
     
     private String getRouteOrAgencyStr(HashSet<String> strings) {
-    	StringBuilder builder = new StringBuilder();
+        StringBuilder builder = new StringBuilder();
         for (String agency : strings) {
             builder.append(agency);
             builder.append(",");
@@ -1056,7 +1070,7 @@ public class RoutingRequest implements Cloneable, Serializable {
     }
     
     public String getPreferredAgenciesStr() {
-    	return getRouteOrAgencyStr(preferredAgencies);
+        return getRouteOrAgencyStr(preferredAgencies);
     }
 
     public String getUnpreferredRouteStr() {
@@ -1064,7 +1078,7 @@ public class RoutingRequest implements Cloneable, Serializable {
     }
     
     public String getUnpreferredAgenciesStr() {
-    	return getRouteOrAgencyStr(unpreferredAgencies);
+        return getRouteOrAgencyStr(unpreferredAgencies);
     }
 
     public String getBannedRouteStr() {
@@ -1080,7 +1094,7 @@ public class RoutingRequest implements Cloneable, Serializable {
     }
     
     public String getBannedAgenciesStr() {
-    	return getRouteOrAgencyStr(bannedAgencies);
+        return getRouteOrAgencyStr(bannedAgencies);
     }
 
     public void setMaxWalkDistance(double maxWalkDistance) {
@@ -1090,10 +1104,29 @@ public class RoutingRequest implements Cloneable, Serializable {
         }
     }
 
+    public void setMaxPreTransitTime(int maxPreTransitTime) {
+        if (maxPreTransitTime > 0) {
+            this.maxPreTransitTime = maxPreTransitTime;
+            bikeWalkingOptions.maxPreTransitTime = maxPreTransitTime;
+        }
+    }
+
     public void setWalkReluctance(double walkReluctance) {
         if (walkReluctance > 0) {
             this.walkReluctance = walkReluctance;
             // Do not set bikeWalkingOptions.walkReluctance here, because that needs a higher value.
+        }
+    }
+
+    public void setWaitReluctance(double waitReluctance) {
+        if (waitReluctance > 0) {
+            this.waitReluctance = waitReluctance;
+        }
+    }
+
+    public void setWaitAtBeginningFactor(double waitAtBeginningFactor) {
+        if (waitAtBeginningFactor > 0) {
+            this.waitAtBeginningFactor = waitAtBeginningFactor;
         }
     }
 
@@ -1127,25 +1160,25 @@ public class RoutingRequest implements Cloneable, Serializable {
 
     /** Check if route is preferred according to this request. */
     public long preferencesPenaltyForRoute(Route route) {
-    	long preferences_penalty = 0;
-    	String agencyID = route.getId().getAgencyId();
+        long preferences_penalty = 0;
+        String agencyID = route.getId().getAgencyId();
         if ((preferredRoutes != null && !preferredRoutes.equals(RouteMatcher.emptyMatcher())) ||
                 (preferredAgencies != null && !preferredAgencies.isEmpty())) {
-    		boolean isPreferedRoute = preferredRoutes != null && preferredRoutes.matches(route);
-    		boolean isPreferedAgency = preferredAgencies != null && preferredAgencies.contains(agencyID); 
-    		if (!isPreferedRoute && !isPreferedAgency) {
-    			preferences_penalty += otherThanPreferredRoutesPenalty;
-    		}
-    		else {
-    			preferences_penalty = 0;
-    		}
-    	}
-    	boolean isUnpreferedRoute  = unpreferredRoutes   != null && unpreferredRoutes.matches(route);
-    	boolean isUnpreferedAgency = unpreferredAgencies != null && unpreferredAgencies.contains(agencyID); 
-    	if (isUnpreferedRoute || isUnpreferedAgency) {
-    		preferences_penalty += useUnpreferredRoutesPenalty;
-    	}
-    	return preferences_penalty;
+            boolean isPreferedRoute = preferredRoutes != null && preferredRoutes.matches(route);
+            boolean isPreferedAgency = preferredAgencies != null && preferredAgencies.contains(agencyID);
+            if (!isPreferedRoute && !isPreferedAgency) {
+                preferences_penalty += otherThanPreferredRoutesPenalty;
+            }
+            else {
+                preferences_penalty = 0;
+            }
+        }
+        boolean isUnpreferedRoute  = unpreferredRoutes   != null && unpreferredRoutes.matches(route);
+        boolean isUnpreferedAgency = unpreferredAgencies != null && unpreferredAgencies.contains(agencyID);
+        if (isUnpreferedRoute || isUnpreferedAgency) {
+            preferences_penalty += useUnpreferredRoutesPenalty;
+        }
+        return preferences_penalty;
     }
 
 }

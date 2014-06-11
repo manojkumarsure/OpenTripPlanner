@@ -23,16 +23,13 @@ import javax.inject.Inject;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Context;
 import javax.xml.datatype.DatatypeConfigurationException;
 
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.opentripplanner.api.parameter.QualifiedModeSetSequence;
 import org.opentripplanner.routing.core.OptimizeType;
 import org.opentripplanner.routing.core.RoutingRequest;
-import org.opentripplanner.routing.core.TraverseModeSet;
 import org.opentripplanner.routing.request.BannedStopSet;
-import org.opentripplanner.routing.services.GraphService;
 import org.opentripplanner.standalone.OTPServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,11 +86,35 @@ public abstract class RoutingResource {
     /** The maximum distance (in meters) the user is willing to walk. Defaults to unlimited. */
     @QueryParam("maxWalkDistance") protected List<Double> maxWalkDistance;
 
+    /**
+     * The maximum time (in seconds) of pre-transit travel when using drive-to-transit (park and
+     * ride or kiss and ride). Defaults to unlimited.
+     */
+    @DefaultValue("-1") @QueryParam("maxPreTransitTime") protected List<Integer> maxPreTransitTime;
+
     /** A multiplier for how bad walking is, compared to being in transit for equal lengths of time.
      *  Defaults to 2. Empirically, values between 10 and 20 seem to correspond well to the concept
      *  of not wanting to walk too much without asking for totally ridiculous itineraries, but this
      *  observation should in no way be taken as scientific or definitive. Your mileage may vary.*/
     @QueryParam("walkReluctance") protected List<Double> walkReluctance;
+
+    /**
+     * How much worse is waiting for a transit vehicle than being on a transit vehicle, as a
+     * multiplier. The default value treats wait and on-vehicle time as the same.
+     *
+     * It may be tempting to set this higher than walkReluctance (as studies often find this kind of
+     * preferences among riders) but the planner will take this literally and walk down a transit
+     * line to avoid waiting at a stop. This used to be set less than 1 (0.95) which would make
+     * waiting offboard preferable to waiting onboard in an interlined trip. That is also
+     * undesirable.
+     *
+     * If we only tried the shortest possible transfer at each stop to neighboring stop patterns,
+     * this problem could disappear.
+     */
+    @QueryParam("waitReluctance") protected List<Double> waitReluctance;
+
+    /** How much less bad is waiting at the beginning of the trip (replaces waitReluctance) */
+    @QueryParam("waitAtBeginningFactor") protected List<Double> waitAtBeginningFactor;
 
     /** The user's walking speed in meters/second. Defaults to approximately 3 MPH. */
     @QueryParam("walkSpeed") protected List<Double> walkSpeed;
@@ -337,7 +358,10 @@ public abstract class RoutingResource {
         request.setWheelchairAccessible(get(wheelchair, n, request.isWheelchairAccessible()));
         request.setNumItineraries(get(numItineraries, n, request.getNumItineraries()));
         request.setMaxWalkDistance(get(maxWalkDistance, n, request.getMaxWalkDistance()));
+        request.setMaxPreTransitTime(get(maxPreTransitTime, n, request.getMaxPreTransitTime()));
         request.setWalkReluctance(get(walkReluctance, n, request.getWalkReluctance()));
+        request.setWaitReluctance(get(waitReluctance, n, request.getWaitReluctance()));
+        request.setWaitAtBeginningFactor(get(waitAtBeginningFactor, n, request.getWaitAtBeginningFactor()));
         request.setWalkSpeed(get(walkSpeed, n, request.getWalkSpeed()));
         double bikeSpeedParam = get(bikeSpeed, n, request.getBikeSpeed());
         request.setBikeSpeed(bikeSpeedParam);
